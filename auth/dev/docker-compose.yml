@@ -1,0 +1,108 @@
+networks:
+  auth:
+
+services:
+  redis:
+    container_name: auth-redis
+    image: redis:latest
+    command: redis-server --requirepass ${ROOT_PASSWORD}
+    volumes:
+      - auth-redis:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    ports:
+      - '16379:6379'
+    networks:
+      - auth
+
+  redis-commander:
+    container_name: auth-redis-commander
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=redis:6379
+      - REDIS_PASSWORD=${ROOT_PASSWORD}
+      - HTTP_USER=${DEFAULT_USER}
+      - HTTP_PASSWORD=${DEFAULT_PASSWORD}
+    ports:
+      - '18082:8081'
+    networks:
+      - auth
+    depends_on:
+      - redis
+
+  postgres:
+    image: postgres:latest
+    container_name: auth-postgres
+    environment:
+      POSTGRES_USER: ${DEFAULT_USER}
+      POSTGRES_PASSWORD: ${DEFAULT_PASSWORD}
+      POSTGRES_DB: auth
+    ports:
+      - "15432:5432"
+    volumes:
+      - auth-postgres:/var/lib/postgresql
+    networks:
+      - auth
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: auth-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${DEFAULT_PASSWORD}
+    ports:
+      - "15050:80"
+    volumes:
+      - ./postgres.json:/pgadmin4/servers.json
+      - auth-pgadmin:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - auth
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.6.5
+    container_name: auth-etcd
+    ports:
+      - "12379:2379"
+      - "12380:2380"
+    environment:
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_NAME: "etcd-node"
+      ETCD_DATA_DIR: "/etcd-data"
+      ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
+      ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"
+      ETCD_LISTEN_PEER_URLS: "http://0.0.0.0:2380"
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: "http://etcd:2380"
+      ETCD_INITIAL_CLUSTER: "etcd-node=http://etcd:2380"
+      ETCD_INITIAL_CLUSTER_TOKEN: "etcd-cluster"
+      ETCD_INITIAL_CLUSTER_STATE: "new"
+    volumes:
+      - auth-etcd:/etcd-data
+    networks:
+      - auth
+
+  etcd-keeper:
+    image: evildecay/etcdkeeper:latest
+    container_name: auth-etcd-keeper
+    restart: always
+    depends_on:
+      - etcd
+    ports:
+      - "18080:8080"
+    environment:
+      ETCD_ENDPOINTS: "http://etcd:2379"
+    networks:
+      - auth
+
+# docker volume create
+volumes:
+  auth-redis:
+    external: true
+  auth-postgres:
+    external: true
+  auth-pgadmin:
+    external: true
+  auth-etcd:
+    external: true
